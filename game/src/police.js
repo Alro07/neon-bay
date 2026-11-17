@@ -1,55 +1,102 @@
-// Neon Bay — wanted level + police pursuit (original code).
-import { makeCar } from './vehicles.js';
-export function makePolice(scene) { return { cars: [], timer: 0 }; }
-export function wantedFor(stars) { return Math.min(5, stars); }
-export function ensurePolice(state, scene, dt) {
-  const want = state.wanted >= 1 ? Math.min(3, state.wanted) : 0;
-  // spawn up to `want` police cars near the player
-  while (state.police.cars.length < want) {
-    const a = Math.random() * Math.PI * 2;
-    const c = makeCar(state.player.pos.x + Math.sin(a) * 45, state.player.pos.z + Math.cos(a) * 45, 0, 0x111111, true);
-    c.police = true; c.parked = false; c.speed = 0;
-    scene.add(c.mesh); state.police.cars.push(c);
+// police.js — Bay PD: cruisers spawn while the player is wanted, chase and ram,
+// and flash their light bars. Wanted stars cool down once the player breaks
+// line of sight and stays calm.
+import * as THREE from 'three';
+import { createCar, bumpCars } from './vehicles.js';
+import { resolveBuildingCollision, clampToCity } from './city.js';
+
+export function addWanted(state, amount, reason) {
+  if (amount <= 0) return;
+  state.wanted = Math.min(5, state.wanted + amount);
+  state.wantedTimer = 0;
+  state.lastCrimeAt = state.elapsed;
+  if (reason) state.toast(reason + '  +' + amount + '★', 2.2);
+}
+
+export function spawnPoliceCar(state) {
+  const angle = Math.random() * Math.PI * 2;
+  const dist = 26 + Math.random() * 14;
+  let x = state.player.pos.x + Math.sin(angle) * dist;
+  let z = state.player.pos.z + Math.cos(angle) * dist;
+  const c = clampToCity(x, z, 6);
+  x = c.x; z = c.z;
+  const cop = createCar(state.scene, x, z, 0, 0x101418, { police: true });
+  cop.cruise = 24 + state.wanted * 1.5;
+  cop.flashPhase = Math.random() * 10;
+  state.police.push(cop);
+  return cop;
+}
+
+export function updatePolice(state, dt) {
+  // Spawn cruisers up to the wanted level (min 1 while wanted > 0).
+  const wantCount = state.wanted > 0 ? Math.min(3, state.wanted) : 0;
+  while (state.police.length < wantCount) spawnPoliceCar(state);
+  while (state.police.length > wantCount) {
+    const cop = state.police.pop();
+    state.scene.remove(cop.group);
   }
-  while (state.police.cars.length > want) {
-    const c = state.police.cars.pop(); scene.remove(c.mesh);
-  }
-  // chase: steer toward player, ram speed scales with stars
-  for (const c of state.police.cars) {
-    const dx = state.player.pos.x - c.x, dz = state.player.pos.z - c.z;
-    const dist = Math.hypot(dx, dz) || 1;
-    const target = Math.atan2(-dx, -dz);
-    let diff = target - c.heading;
+
+  for (const cop of state.police) {
+    const px = state.player.pos.x; const pz = state.player.pos.z;
+    const dx = px - cop.group.position.x;
+    const dz = pz - cop.group.position.z;
+    const dist = Math.hypot(dx, dz);
+    const wantHeading = Math.atan2(dx, dz);
+    let diff = wantHeading - cop.heading;
     while (diff > Math.PI) diff -= Math.PI * 2;
     while (diff < -Math.PI) diff += Math.PI * 2;
-    c.heading += Math.max(-2.2 * dt, Math.min(2.2 * dt, diff));
-    const top = 13 + state.wanted * 2.5;
-    c.speed += (top - c.speed) * dt * 0.8;
-    c.x += -Math.sin(c.heading) * c.speed * dt;
-    c.z += -Math.cos(c.heading) * c.speed * dt;
-    c.mesh.position.set(c.x, 0, c.z);
-    c.mesh.rotation.y = c.heading;
-    // flashing light bar
-    if (c.mesh.userData.lightBar) c.mesh.userData.lightBar.material.emissive.setHex((Math.floor(performance.now() / 250) % 2) ? 0xff0000 : 0x0000ff);
-    // ram: damage player on contact
-    if (dist < 3.2) {
-      state.player.health = Math.max(0, state.player.health - 12 * dt);
-      if (state.player.car) { state.player.car.speed *= 0.94; }
+    const turnRate = dist < 6 ? 3.4 : 2.4;
+    cop.heading += Math.max(-turnRate * dt, Math.min(turnRate * dt, diff));
+    const targetSpeed = dist < 4 ? cop.cruise * 0.4 : cop.cruise;
+    cop.speed += (targetSpeed - cop.speed) * Math.min(1, 2 * dt);
+    let nx = cop.group.position.x + Math.sin(cop.heading) * cop.speed * dt;
+    let nz = cop.group.position.z + Math.cos(cop.heading) * cop.speed * dt;
+    const fixed = resolveBuildingCollision(state.city.colliders, nx, nz, 1.6);
+    cop.group.position.x = clampToCity(fixed.x, fixed.z, 2).x;
+    cop.group.position.z = clampToCity(fixed.x, fixed.z, 2).z;
+    cop.group.rotation.y = cop.heading;
+    for (const w of cop.wheels) w.rotation.x += cop.speed * dt * 2.4;
+    // Flashing light bar (red/blue alternating).
+    cop.flashPhase += dt * 9;
+    const bar = cop.group.getObjectByName('lightBar');
+    if (bar) bar.material.color.setHex(Math.sin(cop.flashPhase) > 0 ? 0xff2222 : 0x2244ff);
+    // Ram the player: bump their car, or hurt them on foot.
+    if (state.player.car) {
+      if (bumpCars(cop, state.player.car, 1.4)) {
+        state.player.car.speed *= 0.82;
+        cop.speed *= 0.7;
+        state.damageFlash = 0.35;
+        state.health = Math.max(0, state.health - 2 * dt * 10);
+      }
+    } else if (dist < 2.6) {
+      state.health = Math.max(0, state.health - 12 * dt);
+      state.damageFlash = 0.4;
+    }
+    // Shot-up cruisers smoke and stop chasing.
+    if (cop.health <= 0) {
+      cop.speed = Math.max(0, cop.speed - 20 * dt);
+      cop.group.position.y = 0;
     }
   }
-  // wanted decays when no police can see the player (far away / hiding)
+
+  // Wanted cooldown: no cop within 42m for a while -> lose a star.
   if (state.wanted > 0) {
-    state.wantedTimer -= dt;
-    const nearest = state.police.cars.reduce((m, c) => Math.min(m, Math.hypot(c.x - state.player.pos.x, c.z - state.player.pos.z)), 999);
-    if (nearest > 70 && state.wantedTimer <= 0) {
-      state.wanted -= 1; state.wantedTimer = 6;
-      state.toast('You lost a star — stay out of sight!');
+    let nearest = Infinity;
+    for (const cop of state.police) {
+      nearest = Math.min(nearest, Math.hypot(
+        cop.group.position.x - state.player.pos.x,
+        cop.group.position.z - state.player.pos.z));
+    }
+    const calm = nearest > 42 || state.police.length === 0;
+    if (calm) {
+      state.wantedTimer += dt;
+      if (state.wantedTimer > 9) {
+        state.wanted -= 1;
+        state.wantedTimer = 0;
+        state.toast(state.wanted > 0 ? 'Heat cooling off… ' + state.wanted + '★ left' : 'You lost the cops!', 2.5);
+      }
+    } else {
+      state.wantedTimer = 0;
     }
   }
-}
-export function addWanted(state, n, reason) {
-  const before = state.wanted;
-  state.wanted = Math.min(5, state.wanted + n);
-  state.wantedTimer = 8;
-  if (state.wanted > before) state.toast(`WANTED +${state.wanted - before}★ — ${reason}`);
 }

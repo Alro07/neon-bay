@@ -1,101 +1,204 @@
-// Neon Bay — city: ground, roads, buildings, palms, beach, sea, lamps (original code).
+// city.js — builds the Neon Bay city: ground, road grid, beach, buildings,
+// palms, lamps and neon signs. Deterministic (seeded RNG) so every run looks the same.
 import * as THREE from 'three';
-export const CITY = 420; // city spans -210..210
-export const ROADS = [-150, -90, -30, 30, 90, 150]; // grid road centres
-let seed = 7;
-function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
-function box(w, h, d, color, x, y, z, emissive = 0) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
-    new THREE.MeshLambertMaterial({ color, emissive }));
-  m.position.set(x, y, z); return m;
+
+export function makeRng(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
-export function buildCity(scene) {
-  const colliders = []; // {x,z,hw,hd}
-  const group = new THREE.Group();
-  // ground + beach + sea
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(CITY + 160, CITY + 160),
-    new THREE.MeshLambertMaterial({ color: 0x3d7a4a }));
-  ground.rotation.x = -Math.PI / 2; ground.position.set(0, 0, 0); group.add(ground);
-  const sand = new THREE.Mesh(new THREE.PlaneGeometry(CITY + 160, 40),
-    new THREE.MeshLambertMaterial({ color: 0xe8d28a }));
-  sand.rotation.x = -Math.PI / 2; sand.position.set(0, 0.02, CITY / 2 + 20); group.add(sand);
-  const sea = new THREE.Mesh(new THREE.PlaneGeometry(CITY + 160, 120),
-    new THREE.MeshLambertMaterial({ color: 0x1e90d6 }));
-  sea.rotation.x = -Math.PI / 2; sea.position.set(0, 0.01, CITY / 2 + 100); group.add(sea);
-  // roads: dark strips + centre dashes
-  const roadMat = new THREE.MeshLambertMaterial({ color: 0x2b2f38 });
-  for (const r of ROADS) {
-    const h = new THREE.Mesh(new THREE.PlaneGeometry(CITY, 14), roadMat);
-    h.rotation.x = -Math.PI / 2; h.position.set(0, 0.03, r); group.add(h);
-    const v = new THREE.Mesh(new THREE.PlaneGeometry(14, CITY), roadMat);
-    v.rotation.x = -Math.PI / 2; v.position.set(r, 0.03, 0); group.add(v);
-    for (let i = -200; i <= 200; i += 16) {
-      const d1 = box(6, 0.05, 0.6, 0xffe066, i, 0.05, r);
-      const d2 = box(0.6, 0.05, 6, 0xffe066, r, 0.05, i);
-      group.add(d1, d2);
+
+const ROAD_COORDS = [-60, -30, 0, 30, 60];
+const ROAD_W = 9;
+export const CITY_BOUND = 96;
+
+function windowTexture(rng) {
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 128;
+  const g = c.getContext('2d');
+  // Light base so the building colour stays bright in daylight; windows glow.
+  g.fillStyle = '#9aa0b5'; g.fillRect(0, 0, 64, 128);
+  for (let y = 6; y < 122; y += 12) {
+    for (let x = 6; x < 58; x += 12) {
+      const lit = rng() < 0.55;
+      g.fillStyle = lit ? (rng() < 0.7 ? '#ffe9a3' : '#8ef6ff') : '#3a4060';
+      g.fillRect(x, y, 8, 7);
     }
   }
-  // sidewalks: light strips along roads
-  const walkMat = new THREE.MeshLambertMaterial({ color: 0x9aa3ad });
-  for (const r of ROADS) {
-    const h = new THREE.Mesh(new THREE.PlaneGeometry(CITY, 3), walkMat);
-    h.rotation.x = -Math.PI / 2; h.position.set(0, 0.04, r + 8.5); group.add(h);
-    const v = new THREE.Mesh(new THREE.PlaneGeometry(3, CITY), walkMat);
-    v.rotation.x = -Math.PI / 2; v.position.set(r + 8.5, 0.04, 0); group.add(v);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+export function buildCity(scene) {
+  const rng = makeRng(20261117);
+  const colliders = [];
+  const group = new THREE.Group();
+  group.name = 'NeonBayCity';
+
+  // Ground: big concrete slab.
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(260, 260),
+    new THREE.MeshLambertMaterial({ color: 0x5a6b4e }),
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.set(0, 0, -10);
+  group.add(ground);
+
+  // Beach sand (south edge) and the bay water beyond it.
+  const sand = new THREE.Mesh(
+    new THREE.PlaneGeometry(260, 34),
+    new THREE.MeshLambertMaterial({ color: 0xe8d29a }),
+  );
+  sand.rotation.x = -Math.PI / 2;
+  sand.position.set(0, 0.05, -102);
+  group.add(sand);
+  const water = new THREE.Mesh(
+    new THREE.PlaneGeometry(300, 90),
+    new THREE.MeshLambertMaterial({ color: 0x1e7fb8, emissive: 0x0a3d66 }),
+  );
+  water.rotation.x = -Math.PI / 2;
+  water.position.set(0, 0.02, -164);
+  water.name = 'bayWater';
+  group.add(water);
+
+  // Roads: dark strips along every grid line, plus the beach boulevard.
+  const roadMat = new THREE.MeshLambertMaterial({ color: 0x23242e });
+  const walkMat = new THREE.MeshLambertMaterial({ color: 0x8a8f9e });
+  for (const c of ROAD_COORDS) {
+    const ns = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W, 200), roadMat);
+    ns.rotation.x = -Math.PI / 2; ns.position.set(c, 0.08, -5);
+    group.add(ns);
+    const ew = new THREE.Mesh(new THREE.PlaneGeometry(200, ROAD_W), roadMat);
+    ew.rotation.x = -Math.PI / 2; ew.position.set(-5, 0.08, c);
+    group.add(ew);
+    // Sidewalk strips beside each road.
+    for (const off of [-7.5, 7.5]) {
+      const s1 = new THREE.Mesh(new THREE.PlaneGeometry(3, 200), walkMat);
+      s1.rotation.x = -Math.PI / 2; s1.position.set(c + off, 0.06, -5);
+      group.add(s1);
+      const s2 = new THREE.Mesh(new THREE.PlaneGeometry(200, 3), walkMat);
+      s2.rotation.x = -Math.PI / 2; s2.position.set(-5, 0.06, c + off);
+      group.add(s2);
+    }
+    // Dashed centre lines.
+    const dashMat = new THREE.MeshBasicMaterial({ color: 0xffe9a3 });
+    for (let d = -95; d < 95; d += 8) {
+      const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 3.4), dashMat);
+      dash.rotation.x = -Math.PI / 2; dash.position.set(c, 0.1, d);
+      group.add(dash);
+    }
   }
-  // buildings in blocks between roads
-  const palette = [0xff5da2, 0x37e0ff, 0xffd23e, 0x8b7cff, 0x7dffb0, 0xff8a5c, 0x5ce1e6, 0xf5f0e6, 0x4a6fa5, 0xe07a9a];
-  const winMat = new THREE.MeshLambertMaterial({ color: 0x9fe8ff, emissive: 0x224455 });
-  for (let i = 0; i < ROADS.length - 1; i++) {
-    for (let j = 0; j < ROADS.length - 1; j++) {
-      const cx = (ROADS[i] + ROADS[i + 1]) / 2, cz = (ROADS[j] + ROADS[j + 1]) / 2;
-      const n = 1 + Math.floor(rnd() * 2);
-      for (let k = 0; k < n; k++) {
-        const w = 14 + rnd() * 16, d = 14 + rnd() * 16, h = 12 + rnd() * 46;
-        const x = cx + (k - 0.5) * 22 + (rnd() - 0.5) * 8, z = cz + (rnd() - 0.5) * 14;
-        const c = palette[Math.floor(rnd() * palette.length)];
-        const b = box(w, h, d, c, x, h / 2, z);
-        group.add(b);
-        // neon roof trim + windows strip
-        group.add(box(w + 0.4, 0.8, d + 0.4, 0xffffff, x, h + 0.4, z, c));
-        for (let wy = 6; wy < h - 2; wy += 7) group.add(box(w * 0.8, 1.6, 0.3, 0x9fe8ff, x, wy, z + d / 2 + 0.1));
-        colliders.push({ x, z, hw: w / 2, hd: d / 2 });
+
+  // Buildings: one or two per block, bright neon palette, lit windows.
+  const palette = [0xff5da2, 0x39e6ff, 0xffd23e, 0x7dff8a, 0xff7a3d, 0xb678ff, 0x4dc3ff, 0xff4d6d];
+  const winTex = windowTexture(rng);
+  const blocks = [];
+  for (let i = 0; i < ROAD_COORDS.length - 1; i++) {
+    for (let j = 0; j < ROAD_COORDS.length - 1; j++) {
+      blocks.push([ROAD_COORDS[i] + 15, ROAD_COORDS[j] + 15]);
+    }
+  }
+  const buildingMeshes = [];
+  for (const [bx, bz] of blocks) {
+    const count = rng() < 0.5 ? 1 : 2;
+    for (let k = 0; k < count; k++) {
+      const w = 9 + rng() * 7;
+      const d = 9 + rng() * 7;
+      const h = 8 + rng() * rng() * 34;
+      const cx = bx + (count === 2 ? (k === 0 ? -5 : 5) : 0) + (rng() - 0.5) * 2;
+      const cz = bz + (rng() - 0.5) * 2;
+      const color = palette[Math.floor(rng() * palette.length)];
+      const mat = new THREE.MeshLambertMaterial({ color, map: winTex, emissive: color, emissiveIntensity: 0.28 });
+      const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      b.position.set(cx, h / 2, cz);
+      group.add(b);
+      buildingMeshes.push(b);
+      colliders.push({ minX: cx - w / 2, maxX: cx + w / 2, minZ: cz - d / 2, maxZ: cz + d / 2, h });
+      // Neon roof trim.
+      const trim = new THREE.Mesh(
+        new THREE.BoxGeometry(w + 0.3, 0.5, d + 0.3),
+        new THREE.MeshBasicMaterial({ color: 0xff2ea6 }),
+      );
+      trim.position.set(cx, h + 0.25, cz);
+      group.add(trim);
+    }
+  }
+
+  // Neon Tower landmark at the north-east corner plaza.
+  const tower = new THREE.Mesh(
+    new THREE.BoxGeometry(16, 62, 16),
+    new THREE.MeshLambertMaterial({ color: 0x27306e, map: winTex, emissive: 0x331133 }),
+  );
+  tower.position.set(76, 31, 76);
+  group.add(tower);
+  colliders.push({ minX: 68, maxX: 84, minZ: 68, maxZ: 84, h: 62 });
+  const beacon = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.4, 2.2, 26, 12, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xff2ea6, transparent: true, opacity: 0.35, side: THREE.DoubleSide }),
+  );
+  beacon.position.set(76, 75, 76);
+  beacon.name = 'towerBeacon';
+  group.add(beacon);
+
+  // Palm trees along the beach boulevard.
+  const trunkMat = new THREE.MeshLambertMaterial({ color: 0x7a5230 });
+  const leafMat = new THREE.MeshLambertMaterial({ color: 0x2fae5f });
+  for (let x = -85; x <= 85; x += 10) {
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.55, 7, 8), trunkMat);
+    trunk.position.set(x, 3.5, -72);
+    group.add(trunk);
+    const crown = new THREE.Mesh(new THREE.ConeGeometry(3.2, 3.4, 8), leafMat);
+    crown.position.set(x, 8.4, -72);
+    group.add(crown);
+  }
+
+  // Street lamps at intersections.
+  const poleMat = new THREE.MeshLambertMaterial({ color: 0x30343f });
+  const lampMat = new THREE.MeshBasicMaterial({ color: 0xfff2b0 });
+  for (const cx of ROAD_COORDS) {
+    for (const cz of ROAD_COORDS) {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 6, 6), poleMat);
+      pole.position.set(cx + 6, 3, cz + 6);
+      group.add(pole);
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 8), lampMat);
+      lamp.position.set(cx + 6, 6.2, cz + 6);
+      group.add(lamp);
+    }
+  }
+
+  scene.add(group);
+  return { group, colliders, buildingMeshes, water, beacon };
+}
+
+// Push a circle (x, z, radius) out of every building collider it overlaps.
+export function resolveBuildingCollision(colliders, x, z, radius) {
+  let px = x; let pz = z;
+  for (const c of colliders) {
+    const nx = Math.max(c.minX, Math.min(px, c.maxX));
+    const nz = Math.max(c.minZ, Math.min(pz, c.maxZ));
+    const dx = px - nx; const dz = pz - nz;
+    const d2 = dx * dx + dz * dz;
+    if (d2 < radius * radius) {
+      if (d2 > 0.0001) {
+        const d = Math.sqrt(d2);
+        px = nx + (dx / d) * radius;
+        pz = nz + (dz / d) * radius;
+      } else {
+        px = c.maxX + radius;
       }
     }
   }
-  // landmark: Neon Tower (tall, centre) + Marina Pier + Bay Plaza sign blocks
-  const tower = box(24, 95, 24, 0x2a2a55, 0, 47.5, 0);
-  group.add(tower);
-  group.add(box(26, 2, 26, 0xff5da2, 0, 96, 0, 0xff5da2));
-  colliders.push({ x: 0, z: 0, hw: 13, hd: 13 });
-  // palms along beach road
-  for (let x = -200; x <= 200; x += 20) {
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.8, 9, 6),
-      new THREE.MeshLambertMaterial({ color: 0x8a5a2b }));
-    trunk.position.set(x, 4.5, 196); group.add(trunk);
-    const top = new THREE.Mesh(new THREE.SphereGeometry(3.2, 8, 6),
-      new THREE.MeshLambertMaterial({ color: 0x2fae5f }));
-    top.position.set(x, 9.5, 196); top.scale.y = 0.6; group.add(top);
-  }
-  // street lamps at intersections (thin poles, off the sidewalk centre)
-  for (const rx of ROADS) for (const rz of ROADS) {
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 6, 6),
-      new THREE.MeshLambertMaterial({ color: 0x333a45 }));
-    pole.position.set(rx + 10.5, 3, rz + 10.5); group.add(pole);
-    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 6),
-      new THREE.MeshLambertMaterial({ color: 0xfff2a0, emissive: 0xaa8800 }));
-    lamp.position.set(rx + 10.5, 6.2, rz + 10.5); group.add(lamp);
-  }
-  scene.add(group);
-  return { colliders, group };
+  return { x: px, z: pz };
 }
-export function collideCircle(colliders, x, z, r) {
-  for (const c of colliders) {
-    const dx = Math.max(Math.abs(x - c.x) - c.hw, 0), dz = Math.max(Math.abs(z - c.z) - c.hd, 0);
-    if (dx * dx + dz * dz < r * r) return c;
-  }
-  return null;
-}
-export function clampCity(x, z) {
-  return { x: Math.max(-205, Math.min(205, x)), z: Math.max(-205, Math.min(228, z)) };
+
+export function clampToCity(x, z, margin = 4) {
+  return {
+    x: Math.max(-CITY_BOUND + margin, Math.min(CITY_BOUND - margin, x)),
+    z: Math.max(-118, Math.min(CITY_BOUND - margin, z)),
+  };
 }

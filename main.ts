@@ -1,7 +1,16 @@
-// Neon Bay — a 3D open-world crime game (three.js, vendored under game/vendor/):
-// explore a sun-soaked fictional city on foot and by car, steal cars, dodge the
-// Bay PD wanted system, run 5 story missions for Mara, fight, and save progress.
-// The program below copies game/ and screenshots/ to /output and writes dossier.json.
+// Neon Bay — a fresh open-world crime game for make.fun gta6-01 (Node 22,
+// standard library only): the game is this directory's game/ folder, plain
+// static files a desktop browser loads offline (game/index.html and its ES
+// modules, three.js vendored under game/vendor/, no network request), and this
+// program hands it in. It copies game/ and screenshots/ from beside this file
+// to /output and writes /output/dossier.json, the summary the judge reads,
+// with the vendored make.fun library.
+//
+// The game: Neon Bay, an original sun-soaked coastal city you explore on foot
+// and by car — traffic and pedestrians, cars to steal, a 5-star wanted level
+// with Bay PD cruisers that chase you, five story missions from Mara, punch
+// and shoot combat, a HUD with a live minimap, start/pause screens, localStorage
+// saves and synthesized WebAudio sound. Nothing from any commercial game.
 //
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:

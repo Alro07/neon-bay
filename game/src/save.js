@@ -1,21 +1,44 @@
-// Neon Bay — save / load via localStorage.
-const KEY = 'neon-bay-save-v1';
-export function loadSave() {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return null;
-    const d = JSON.parse(raw);
-    if (typeof d !== 'object' || !d) return null;
-    return d;
-  } catch (e) { return null; }
-}
+// save.js — save / load progress in localStorage (cash, health, mission,
+// position, wanted, clock). Auto-saves during play; no account, no network.
+const SAVE_KEY = 'neonbay-save-v1';
+
 export function saveGame(state) {
   try {
-    localStorage.setItem(KEY, JSON.stringify({
-      mission: state.missionIndex, cash: state.cash, completed: state.completed,
-      px: state.player.pos.x, pz: state.player.pos.z, health: state.player.health, t: Date.now(),
-    }));
+    const data = {
+      version: 1,
+      cash: Math.floor(state.cash),
+      health: state.health,
+      wanted: state.wanted,
+      missionIndex: state.missionIndex,
+      missionStage: state.missionStage,
+      clockMinutes: state.clockMinutes,
+      pos: { x: state.player.pos.x, z: state.player.pos.z },
+      inCar: !!state.player.car,
+      savedAt: Date.now(),
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     return true;
-  } catch (e) { return false; }
+  } catch (err) {
+    return false;
+  }
 }
-export function clearSave() { try { localStorage.removeItem(KEY); } catch (e) {} }
+
+export function loadGame() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || data.version !== 1) return null;
+    return data;
+  } catch (err) {
+    return null;
+  }
+}
+
+export function hasSave() {
+  return loadGame() !== null;
+}
+
+export function clearSave() {
+  try { localStorage.removeItem(SAVE_KEY); } catch (err) { /* storage unavailable */ }
+}

@@ -5,56 +5,107 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Neon Bay — Open-World Crime</title>
 <style>
-  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#0b1020;font-family:Arial,Helvetica,sans-serif;color:#fff}
-  #game{position:fixed;inset:0;display:block}
-  .panel{position:fixed;z-index:10}
-  #hud{top:12px;left:12px;background:rgba(5,10,25,.55);border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:10px 12px;min-width:210px}
-  #hud .cash{font-size:22px;font-weight:900;color:#7dffb0}
-  #hud .title{font-size:11px;letter-spacing:2px;color:#9fd8ff;text-transform:uppercase}
-  #stars{font-size:24px;letter-spacing:3px;color:#ffd23e;text-shadow:0 0 8px rgba(255,210,62,.7)}
-  #healthbar{width:190px;height:10px;background:#222;border-radius:5px;overflow:hidden;margin-top:6px}
-  #healthfill{height:100%;width:100%;background:linear-gradient(90deg,#37e08b,#a5ff6e)}
-  #objective{top:12px;left:50%;transform:translateX(-50%);background:rgba(5,10,25,.6);border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:8px 14px;text-align:center;max-width:520px}
-  #objective b{color:#ffd23e}
-  #objective .sub{font-size:12px;color:#cfe8ff}
-  #minimap{right:12px;top:12px;border:2px solid rgba(255,255,255,.35);border-radius:50%;background:#0a1a2e}
-  #speed{right:16px;bottom:16px;text-align:right;font-size:28px;font-weight:900;text-shadow:0 2px 6px #000}
-  #speed small{font-size:12px;color:#9fd8ff}
-  #hint{left:12px;bottom:12px;font-size:12px;color:#dfefff;background:rgba(5,10,25,.55);padding:8px 10px;border-radius:8px;line-height:1.6}
-  #toast{left:50%;bottom:90px;transform:translateX(-50%);font-size:18px;font-weight:800;color:#ffe066;text-shadow:0 2px 8px #000;text-align:center}
-  #dialog{left:50%;bottom:150px;transform:translateX(-50%);width:560px;max-width:90vw;background:rgba(8,12,30,.88);border:1px solid #ff5da2;border-radius:10px;padding:12px 16px}
-  #dialog .who{color:#ff7ab8;font-weight:900}
-  #menu{inset:0;z-index:20;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,rgba(10,8,40,.92),rgba(30,4,50,.88));text-align:center}
-  #menu h1{font-size:56px;margin:0;letter-spacing:4px;background:linear-gradient(90deg,#ff5da2,#ffd23e,#37e0ff);-webkit-background-clip:text;background-clip:text;color:transparent}
-  #menu h2{margin:4px 0 18px;color:#9fd8ff;font-weight:400;letter-spacing:3px;font-size:14px;text-transform:uppercase}
-  #menu button{font-size:18px;padding:12px 28px;margin:6px;border-radius:999px;border:0;cursor:pointer;background:#ff5da2;color:#fff;font-weight:800}
-  #menu button.alt{background:#22335e}
-  #menu p{color:#cfe8ff;font-size:13px;line-height:1.7;max-width:560px;margin:14px auto}
-  #crosshair{left:50%;top:50%;transform:translate(-50%,-50%);font-size:22px;color:#fff;text-shadow:0 0 6px #000;display:none}
-  .hidden{display:none!important}
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #0b1030;
+    font-family: "Trebuchet MS", Verdana, sans-serif; color: #fff; }
+  #game-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(8, 10, 34, 0.55); z-index: 20; }
+  .panel { background: rgba(10, 14, 44, 0.92); border: 2px solid #ff2ea6; border-radius: 14px;
+    padding: 28px 34px; max-width: 560px; text-align: center; box-shadow: 0 0 40px #ff2ea6aa; }
+  .panel h1 { margin: 0 0 4px; font-size: 52px; letter-spacing: 4px; color: #39e6ff;
+    text-shadow: 0 0 18px #39e6ff, 0 0 42px #ff2ea6; }
+  .panel h2 { margin: 0 0 14px; font-size: 15px; color: #ffd23e; letter-spacing: 2px; }
+  .panel p { font-size: 14px; line-height: 1.5; color: #dfe6ff; }
+  .panel button { display: block; width: 260px; margin: 10px auto; padding: 12px; font-size: 17px;
+    font-weight: bold; letter-spacing: 1px; color: #08102e; background: #39e6ff; border: none;
+    border-radius: 8px; cursor: pointer; }
+  .panel button:hover { background: #ff2ea6; color: #fff; }
+  .panel button.ghost { background: transparent; color: #39e6ff; border: 2px solid #39e6ff; }
+  .controls { text-align: left; font-size: 13px; color: #b9c4ff; margin: 14px auto 0; width: 340px; }
+  .controls b { color: #ffd23e; }
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; display: none; }
+  #hud.on { display: block; }
+  #top-right { position: absolute; top: 12px; right: 14px; text-align: right; }
+  #cash { font-size: 26px; font-weight: bold; color: #7dff8a; text-shadow: 0 2px 4px #000; }
+  #clock { font-size: 16px; color: #fff; text-shadow: 0 2px 4px #000; }
+  #stars { font-size: 26px; letter-spacing: 3px; text-shadow: 0 2px 4px #000; }
+  #stars .lit { color: #ffd23e; } #stars .dim { color: #555; }
+  #top-left { position: absolute; top: 12px; left: 14px; }
+  #health-wrap { width: 210px; height: 16px; background: #000a; border: 1px solid #fff6; border-radius: 8px; }
+  #health-bar { height: 100%; width: 100%; background: linear-gradient(90deg, #ff4d6d, #ff2ea6); border-radius: 8px; }
+  #speed { margin-top: 6px; font-size: 15px; text-shadow: 0 2px 4px #000; }
+  #objective { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.55); border: 1px solid #39e6ff; border-radius: 8px; padding: 8px 16px;
+    font-size: 14px; max-width: 480px; text-align: center; }
+  #objective b { color: #ffd23e; }
+  #minimap { position: absolute; right: 14px; bottom: 14px; width: 190px; height: 190px;
+    border-radius: 50%; border: 3px solid #39e6ff88; background: #0a1030cc; box-shadow: 0 0 18px #000a; }
+  #toast { position: absolute; bottom: 220px; left: 50%; transform: translateX(-50%);
+    font-size: 18px; font-weight: bold; color: #ffd23e; text-shadow: 0 2px 6px #000; text-align: center; }
+  #prompt { position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%);
+    font-size: 15px; background: rgba(0,0,0,0.6); padding: 6px 14px; border-radius: 6px; }
+  #dialog { position: absolute; left: 50%; bottom: 90px; transform: translateX(-50%); width: 620px;
+    max-width: 90vw; background: rgba(10, 12, 40, 0.92); border: 2px solid #ff2ea6; border-radius: 10px;
+    padding: 14px 18px; display: none; pointer-events: auto; }
+  #dialog.on { display: block; }
+  #dialog .who { color: #ff2ea6; font-weight: bold; letter-spacing: 1px; }
+  #dialog .text { margin-top: 6px; font-size: 15px; line-height: 1.45; }
+  #dialog .hint { margin-top: 8px; font-size: 12px; color: #9fb0ff; }
+  #crosshair { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    font-size: 22px; color: #fff; text-shadow: 0 0 6px #000; display: none; }
+  #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 5;
+    box-shadow: inset 0 0 120px rgba(255, 46, 166, 0.10); }
+  .hidden { display: none !important; }
 </style>
-<script type="importmap">{"imports":{"three":"./vendor/three.module.min.js"}}</script>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
 </head>
 <body>
-<canvas id="game"></canvas>
-<div id="hud" class="panel"><div class="title">Neon Bay</div><div class="cash" id="cash">$0</div><div id="stars"></div><div id="healthbar"><div id="healthfill"></div></div><div id="missionLabel" style="font-size:12px;margin-top:6px;color:#ffe066"></div><div id="vehLabel" style="font-size:12px;color:#9fd8ff"></div></div>
-<div id="objective" class="panel"><b id="objTitle">Welcome to Neon Bay</b><div class="sub" id="objText">Press ENTER to start</div></div>
-<canvas id="minimap" class="panel" width="180" height="180"></canvas>
-<div id="speed" class="panel"><span id="speedVal">0</span> <small>km/h</small></div>
-<div id="hint" class="panel">WASD move / drive &nbsp;·&nbsp; Mouse look &nbsp;·&nbsp; <b>E</b> steal / exit car &nbsp;·&nbsp; <b>F</b> punch &nbsp;·&nbsp; <b>Click</b> shoot &nbsp;·&nbsp; <b>Space</b> brake &nbsp;·&nbsp; <b>M</b> mission &nbsp;·&nbsp; <b>P / Esc</b> pause</div>
-<div id="toast" class="panel"></div>
-<div id="dialog" class="panel hidden"><span class="who" id="dlgWho"></span><span id="dlgText"></span></div>
-<div id="crosshair" class="panel">+</div>
-<div id="menu" class="panel">
-  <div>
+<canvas id="game-canvas"></canvas>
+<div id="vignette"></div>
+<div id="hud">
+  <div id="top-left">
+    <div id="health-wrap"><div id="health-bar"></div></div>
+    <div id="speed">0 mph</div>
+  </div>
+  <div id="top-right">
+    <div id="cash">$0</div>
+    <div id="clock">10:00</div>
+    <div id="stars"></div>
+  </div>
+  <div id="objective"><b>Mission</b><br><span id="objective-text">Meet Mara.</span></div>
+  <canvas id="minimap" width="190" height="190"></canvas>
+  <div id="toast"></div>
+  <div id="prompt"></div>
+  <div id="dialog"><div class="who">MARA — Bay Fixer</div><div class="text" id="dialog-text"></div>
+    <div class="hint">Press E or click to continue</div></div>
+  <div id="crosshair">+</div>
+</div>
+<div id="start-screen" class="overlay">
+  <div class="panel">
     <h1>NEON BAY</h1>
-    <h2>An open-world crime story &middot; sun-soaked &middot; free roam</h2>
-    <button id="btnPlay">▶ PLAY</button>
-    <button id="btnContinue" class="alt">Continue</button>
-    <button id="btnHow" class="alt">How to play</button>
-    <p id="howText" class="hidden">You are <b>Rio</b>, a courier new to Neon Bay. Take jobs from <b>Mara</b>, deliver packages, steal cars when you need wheels, and stay out of trouble — or outrun it. Wanted stars rise when you hit people, steal cars or shoot. Lose the cops by breaking line of sight. Finish all 5 story missions to own the Bay.</p>
-    <p>WASD move &amp; drive · Mouse look · E steal/exit car · F punch · Click shoot · Space brake · M mission · P pause · Progress auto-saves</p>
-    <p style="font-size:11px;color:#8aa">Original game. All names, characters, city, art and music are original fiction. No affiliation with any commercial game.</p>
+    <h2>AN OPEN-WORLD CRIME STORY</h2>
+    <p>You are <b>Rio Voss</b>, a courier new to Neon Bay — a sun-soaked coastal city of neon
+    towers, beach boulevards and fast cars. Take jobs from <b>Mara</b>, the bay's fixer,
+    steal what you need, and stay ahead of the Bay PD.</p>
+    <button id="btn-start">▶ START GAME</button>
+    <button id="btn-continue" class="ghost hidden">↻ CONTINUE SAVED GAME</button>
+    <div class="controls">
+      <b>WASD</b> move / drive &nbsp; <b>Mouse</b> look &nbsp; <b>E</b> steal / exit car<br>
+      <b>F</b> punch &nbsp; <b>Click</b> shoot &nbsp; <b>Space</b> brake &nbsp; <b>Shift</b> sprint<br>
+      <b>M</b> restart mission &nbsp; <b>P / Esc</b> pause
+    </div>
+  </div>
+</div>
+<div id="pause-screen" class="overlay hidden">
+  <div class="panel">
+    <h1 style="font-size:34px">PAUSED</h1>
+    <p>Neon Bay waits for no one. Well — right now it does.</p>
+    <button id="btn-resume">▶ RESUME</button>
+    <button id="btn-save" class="ghost">💾 SAVE GAME</button>
+    <button id="btn-restart-mission" class="ghost">↻ RESTART MISSION</button>
+    <button id="btn-quit" class="ghost">QUIT TO TITLE</button>
   </div>
 </div>
 <script type="module" src="./src/main.js"></script>
